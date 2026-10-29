@@ -3,10 +3,11 @@
 Valida a tabela consolidada e salva os erros em um relatório separado.
 """
 
-import sys
 from pathlib import Path
 
 import pandas as pd
+
+from config import CATEGORIES
 
 # EN: Column names come from consolidate.py (date, date_raw, source_file).
 #     CATEGORY_COL and AMOUNT_COL must match generate_data.py.
@@ -19,10 +20,12 @@ CATEGORY_COL = "category"
 AMOUNT_COL = "amount"
 REQUIRED_COLS = [DATE_COL, DATE_RAW_COL, CATEGORY_COL, AMOUNT_COL]
 
-# EN: Allowed categories, copied from generate_data.py (CATEGORIES list).
-# PT: Categorias permitidas, copiadas do generate_data.py (lista CATEGORIES).
-VALID_CATEGORIES = {"Alimentação", "Transporte", "Moradia", "Lazer", "Saúde"}
+# EN: Allowed categories now come from config.py (no copy to keep in sync).
+# PT: As categorias permitidas agora vêm do config.py (sem cópia para manter).
+VALID_CATEGORIES = set(CATEGORIES)
 
+# EN: Input and output paths, relative to the project root.
+# PT: Caminhos de entrada e saída, relativos à raiz do projeto.
 INPUT_FILE = Path("data/processed/consolidated.csv")
 REPORT_FILE = Path("reports/validation_errors.csv")
 ERROR_COLS = ["row", "source_file", "column", "error_type", "value"]
@@ -63,13 +66,29 @@ def check_missing_values(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True)
 
 
+def check_invalid_amount(df: pd.DataFrame) -> pd.DataFrame:
+    """Find amounts that were filled in but are not numbers.
+
+    Encontra valores preenchidos que não são números.
+    """
+    # EN: errors="coerce" turns text like "abc" into NaN. If the original was
+    #     not empty but the number is NaN, it is an invalid amount.
+    # PT: errors="coerce" transforma texto como "abc" em NaN. Se o original não
+    #     era vazio mas o número virou NaN, é um valor inválido.
+    numbers = pd.to_numeric(df[AMOUNT_COL], errors="coerce")
+    mask = numbers.isna() & df[AMOUNT_COL].notna()
+    return _build_errors(df, mask, AMOUNT_COL, "invalid_amount", AMOUNT_COL)
+
+
 def check_negative_amount(df: pd.DataFrame) -> pd.DataFrame:
     """Find negative amounts.
 
     Encontra valores negativos.
     """
-    # EN: errors="coerce" turns non-numeric text into NaN (NaN < 0 is False).
-    # PT: errors="coerce" transforma texto não numérico em NaN (NaN < 0 é False).
+    # EN: Non-numeric text becomes NaN here (NaN < 0 is False); it is handled
+    #     by check_invalid_amount.
+    # PT: Texto não numérico vira NaN aqui (NaN < 0 é False); quem trata isso
+    #     é o check_invalid_amount.
     amounts = pd.to_numeric(df[AMOUNT_COL], errors="coerce")
     return _build_errors(df, amounts < 0, AMOUNT_COL, "negative_amount", AMOUNT_COL)
 
@@ -107,6 +126,7 @@ def validate_all(df: pd.DataFrame) -> pd.DataFrame:
 
     checks = [
         check_missing_values,
+        check_invalid_amount,
         check_negative_amount,
         check_invalid_date,
         check_unknown_category,
@@ -120,7 +140,9 @@ def save_error_report(errors: pd.DataFrame, path: Path = REPORT_FILE) -> Path:
     Salva a tabela de erros em CSV na pasta reports.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    errors.to_csv(path, index=False)
+    # EN: utf-8-sig adds a marker so Excel shows accents (ç, ã) correctly.
+    # PT: utf-8-sig adiciona um marcador para o Excel mostrar acentos (ç, ã) certo.
+    errors.to_csv(path, index=False, encoding="utf-8-sig")
     return path
 
 
@@ -129,6 +151,14 @@ def main() -> None:
 
     Carrega a base consolidada, valida e salva o relatório.
     """
+    # EN: Fail with a clear message if the previous step was not run.
+    # PT: Falha com mensagem clara se a etapa anterior não foi rodada.
+    if not INPUT_FILE.exists():
+        raise FileNotFoundError(
+            f"{INPUT_FILE} not found. Run consolidate.py first. / "
+            f"{INPUT_FILE} não encontrado. Rode o consolidate.py primeiro."
+        )
+
     df = pd.read_csv(INPUT_FILE)
     errors = validate_all(df)
     out = save_error_report(errors)
