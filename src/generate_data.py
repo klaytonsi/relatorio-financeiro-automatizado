@@ -2,7 +2,9 @@
 Gera planilhas financeiras sintéticas com erros de propósito."""
 
 from pathlib import Path
-
+# EN: Allowed categories live in config.py (single source of truth).
+# PT: As categorias permitidas ficam no config.py (fonte única).
+from config import CATEGORIES
 import numpy as np
 import pandas as pd
 
@@ -10,7 +12,6 @@ import pandas as pd
 # PT: Semente fixa: toda execução gera os mesmos dados.
 SEED = 42
 RAW_DIR = Path("data/raw")
-CATEGORIES = ["Alimentação", "Transporte", "Moradia", "Lazer", "Saúde"]
 
 
 def make_base(n_rows: int, rng: np.random.Generator) -> pd.DataFrame:
