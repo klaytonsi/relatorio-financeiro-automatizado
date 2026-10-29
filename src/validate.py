@@ -18,15 +18,17 @@ DATE_RAW_COL = "date_raw"
 SOURCE_COL = "source_file"
 CATEGORY_COL = "category"
 AMOUNT_COL = "amount"
+ID_COL = "id"
 REQUIRED_COLS = [DATE_COL, DATE_RAW_COL, CATEGORY_COL, AMOUNT_COL]
 
-# EN: Allowed categories now come from config.py (no copy to keep in sync).
-# PT: As categorias permitidas agora vêm do config.py (sem cópia para manter).
+# EN: Allowed categories come from config.py (no copy to keep in sync).
+# PT: As categorias permitidas vêm do config.py (sem cópia para manter).
 VALID_CATEGORIES = set(CATEGORIES)
 
 # EN: Input and output paths, relative to the project root.
 # PT: Caminhos de entrada e saída, relativos à raiz do projeto.
 INPUT_FILE = Path("data/processed/consolidated.csv")
+DUPLICATES_FILE = Path("data/processed/duplicates.csv")
 REPORT_FILE = Path("reports/validation_errors.csv")
 ERROR_COLS = ["row", "source_file", "column", "error_type", "value"]
 
@@ -98,8 +100,10 @@ def check_invalid_date(df: pd.DataFrame) -> pd.DataFrame:
 
     Encontra datas preenchidas que não puderam ser interpretadas.
     """
-    # EN: consolidate.py turns invalid dates into NaT but keeps the text in date_raw.
-    # PT: O consolidate.py transforma datas inválidas em NaT e guarda o texto em date_raw.
+    # EN: consolidate.py turns invalid dates into NaT but keeps the text in
+    #     date_raw.
+    # PT: O consolidate.py transforma datas inválidas em NaT e guarda o texto
+    #     em date_raw.
     parsed = pd.to_datetime(df[DATE_COL], errors="coerce")
     mask = parsed.isna() & df[DATE_RAW_COL].notna()
     return _build_errors(df, mask, DATE_COL, "invalid_date", DATE_RAW_COL)
@@ -115,7 +119,20 @@ def check_unknown_category(df: pd.DataFrame) -> pd.DataFrame:
     return _build_errors(df, mask, CATEGORY_COL, "unknown_category", CATEGORY_COL)
 
 
-def validate_all(df: pd.DataFrame) -> pd.DataFrame:
+def check_duplicates(duplicates: pd.DataFrame) -> pd.DataFrame:
+    """Report every row that consolidate.py removed as a duplicate.
+
+    Reporta cada linha que o consolidate.py removeu como duplicada.
+    """
+    # EN: All rows in this table are duplicates, so the mask is all True.
+    #     The value is the transaction id, which identifies the repeated row.
+    # PT: Todas as linhas desta tabela são duplicadas, então a máscara é toda
+    #     True. O valor é o id do lançamento, que identifica a linha repetida.
+    mask = pd.Series(True, index=duplicates.index)
+    return _build_errors(duplicates, mask, ID_COL, "duplicate", ID_COL)
+
+
+def validate_all(df: pd.DataFrame, duplicates: pd.DataFrame) -> pd.DataFrame:
     """Run all checks and return one table with every error.
 
     Roda todas as checagens e devolve uma tabela com todos os erros.
@@ -131,7 +148,9 @@ def validate_all(df: pd.DataFrame) -> pd.DataFrame:
         check_invalid_date,
         check_unknown_category,
     ]
-    return pd.concat([check(df) for check in checks], ignore_index=True)
+    parts = [check(df) for check in checks]
+    parts.append(check_duplicates(duplicates))
+    return pd.concat(parts, ignore_index=True)
 
 
 def save_error_report(errors: pd.DataFrame, path: Path = REPORT_FILE) -> Path:
@@ -147,20 +166,22 @@ def save_error_report(errors: pd.DataFrame, path: Path = REPORT_FILE) -> Path:
 
 
 def main() -> None:
-    """Load the consolidated file, validate it and save the report.
+    """Load the consolidated files, validate them and save the report.
 
-    Carrega a base consolidada, valida e salva o relatório.
+    Carrega os arquivos consolidados, valida e salva o relatório.
     """
     # EN: Fail with a clear message if the previous step was not run.
     # PT: Falha com mensagem clara se a etapa anterior não foi rodada.
-    if not INPUT_FILE.exists():
-        raise FileNotFoundError(
-            f"{INPUT_FILE} not found. Run consolidate.py first. / "
-            f"{INPUT_FILE} não encontrado. Rode o consolidate.py primeiro."
-        )
+    for required in (INPUT_FILE, DUPLICATES_FILE):
+        if not required.exists():
+            raise FileNotFoundError(
+                f"{required} not found. Run consolidate.py first. / "
+                f"{required} não encontrado. Rode o consolidate.py primeiro."
+            )
 
     df = pd.read_csv(INPUT_FILE)
-    errors = validate_all(df)
+    duplicates = pd.read_csv(DUPLICATES_FILE)
+    errors = validate_all(df, duplicates)
     out = save_error_report(errors)
     print(f"{len(errors)} erros encontrados / errors found. Relatório: {out}")
     print(errors["error_type"].value_counts())
@@ -168,3 +189,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
