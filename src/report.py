@@ -160,6 +160,24 @@ def style_sheet(
     ws.freeze_panes = "A2"
 
 
+def export_csvs(
+    tables: dict[str, pd.DataFrame], out_dir: Path
+) -> list[Path]:
+    """Save clean tables (no total row) as CSV for the dashboard.
+
+    Salva as tabelas limpas (sem linha de total) em CSV para o dashboard.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    for file_name, table in tables.items():
+        path = out_dir / file_name
+        # EN: index=False keeps the file free of a useless index column.
+        # PT: index=False evita uma coluna de índice sem utilidade.
+        table.to_csv(path, index=False, encoding="utf-8")
+        paths.append(path)
+    return paths
+    
+    
 def build_report(
     input_file: Path = INPUT_FILE,
     errors_file: Path = ERRORS_FILE,
@@ -195,6 +213,18 @@ def build_report(
         for name, table, money, totals in sheets:
             table.to_excel(writer, sheet_name=name, index=False)
             style_sheet(writer.sheets[name], money, totals)
+
+
+    # EN: Same tables, saved as clean CSV (the dashboard reads these).
+    # PT: As mesmas tabelas, salvas em CSV limpo (o dashboard lê estes).
+    export_csvs(
+        {
+            "resumo_mensal.csv": sheets[0][1],
+            "resumo_categoria.csv": sheets[1][1],
+            "resumo_erros.csv": sheets[2][1],
+        },
+        out_file.parent,
+    )
     return out_file, excluded
 
 
@@ -215,6 +245,7 @@ def main() -> None:
 
     path, excluded = build_report()
     print(f"Relatório salvo / Report saved: {path}")
+    print("CSVs limpos salvos em reports/ / Clean CSVs saved in reports/")
     print(f"{excluded} linhas fora dos resumos / rows left out of summaries")
 
 
