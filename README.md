@@ -1,5 +1,7 @@
 # Relatório Automatizado de Controle Financeiro / Automated Financial Control Report
 
+![Dashboard](reports/dashboard.jpg)
+
 ## EN
 
 ### Goal
